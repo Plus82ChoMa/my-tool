@@ -1,79 +1,60 @@
 export default async function handler(req, res) {
   const { type, keyword, name } = req.query;
 
-  // 파라미터 확인
   if (!type || !keyword || !name) {
     return res.status(400).json({ success: false, error: '검색어와 타겟명을 모두 입력해주세요.' });
   }
 
-  // 띄어쓰기를 무시하고 검색하기 위해 공백 제거
+  // 대표님께서 발급해주신 네이버 공식 오픈 API 출입증
+  const CLIENT_ID = 'z7oub05gYP7vKjDToj2q';
+  const CLIENT_SECRET = 'w_ZaZ6NtGS';
+
   const cleanTarget = name.replace(/\s/g, '').toLowerCase();
   let rank = -1;
 
   try {
-    // 💡 핵심: 네이버 방화벽 우회를 위한 헤더 위장 (가장 최신 브라우저인 척)
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'ko-KR,ko;q=0.9',
-      'Referer': 'https://map.naver.com/'
-    };
-
+    let url = '';
     if (type === 'store') {
-      // 스마트스토어 로직
-      const url = `https://msearch.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`;
-      const response = await fetch(url, { headers });
-      const text = await response.text();
-      
-      const match = text.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/);
-      if (match) {
-        const json = JSON.parse(match[1]);
-        const items = json?.props?.pageProps?.initialState?.products?.list || [];
-        
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i].item;
-          if (!item) continue;
-          
-          const mallName = (item.mallName || item.maker || '').replace(/\s/g, '').toLowerCase();
-          const pName = (item.productTitle || item.productName || '').replace(/\s/g, '').toLowerCase();
-          
-          if (mallName.includes(cleanTarget) || pName.includes(cleanTarget)) {
-            rank = i + 1;
-            break;
-          }
-        }
-      }
+      // 네이버 공식 쇼핑 검색 API
+      url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(keyword)}&display=50`;
     } else {
-      // 💡 플레이스 로직: 구형 API 대신 방화벽이 약한 최신 V5 통합 API 사용
-      const url = `https://map.naver.com/v5/api/search?caller=pc_web&query=${encodeURIComponent(keyword)}&type=all&page=1&displayCount=50&isPlaceRecommendationReplace=true&lang=ko`;
-      const response = await fetch(url, { headers });
-      const text = await response.text();
-      
-      // 방화벽에 막혀서 JSON 데이터가 아니라 에러 웹페이지(HTML '<')가 날아온 경우 방어
-      if (text.trim().startsWith('<')) {
-        throw new Error('현재 네이버 방어벽(WAF)이 일시적으로 강력합니다. 1분 뒤 다시 시도해주세요.');
+      // 네이버 공식 지역(플레이스) 검색 API
+      url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(keyword)}&display=5`;
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        'X-Naver-Client-Id': CLIENT_ID,
+        'X-Naver-Client-Secret': CLIENT_SECRET
       }
-      
-      const data = JSON.parse(text);
-      // V5 API 구조에 맞게 리스트 추출
-      const items = data?.result?.place?.list || data?.result?.site?.list || [];
-      
-      for (let i = 0; i < items.length; i++) {
-        const pName = (items[i].name || '').replace(/\s/g, '').toLowerCase();
-        
-        // 매장명에 타겟이 포함되어 있으면 순위 확정
-        if (pName.includes(cleanTarget)) {
-          rank = i + 1;
-          break;
-        }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.errorMessage || '네이버 API 호출에 실패했습니다.');
+    }
+
+    const items = data.items || [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const title = (item.title || item.mallName || '').replace(/<[^>]*>?/gm, '').replace(/\s/g, '').toLowerCase();
+
+      if (title.includes(cleanTarget)) {
+        rank = i + 1;
+        break;
       }
     }
 
-    // 최종 실제 순위 반환
+    // 상위 50위 이내에 일치하는 이름이 없으면 51위로 처리
+    if (rank === -1) {
+      rank = 51;
+    }
+
     return res.status(200).json({ success: true, rank: rank });
-    
+
   } catch (error) {
-    // 뻗지 않고 깔끔한 에러 메시지로 반환
     return res.status(500).json({ success: false, error: error.message });
   }
 }
