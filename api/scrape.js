@@ -11,21 +11,21 @@ export default async function handler(req, res) {
   let rank = -1;
 
   try {
-    // 💡 핵심: 네이버 방화벽을 뚫기 위해 아이폰(모바일) 사람인 척 위장하는 헤더
+    // 💡 핵심: 네이버 방화벽 우회를 위한 헤더 위장 (가장 최신 브라우저인 척)
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'ko-KR,ko;q=0.9',
-      'Referer': 'https://m.naver.com/'
+      'Referer': 'https://map.naver.com/'
     };
 
     if (type === 'store') {
-      // 스마트스토어 실제 긁어오기 (모바일 네이버 쇼핑)
+      // 스마트스토어 로직
       const url = `https://msearch.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`;
       const response = await fetch(url, { headers });
-      const html = await response.text();
+      const text = await response.text();
       
-      const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/);
+      const match = text.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/);
       if (match) {
         const json = JSON.parse(match[1]);
         const items = json?.props?.pageProps?.initialState?.products?.list || [];
@@ -44,15 +44,19 @@ export default async function handler(req, res) {
         }
       }
     } else {
-      // 플레이스 실제 긁어오기 (PC버전 API가 아닌 방어벽이 약한 모바일 지도 API 사용)
-      const url = `https://m.map.naver.com/search2/searchMore.naver?query=${encodeURIComponent(keyword)}&page=1&displayCount=50&type=SITE_1`;
+      // 💡 플레이스 로직: 구형 API 대신 방화벽이 약한 최신 V5 통합 API 사용
+      const url = `https://map.naver.com/v5/api/search?caller=pc_web&query=${encodeURIComponent(keyword)}&type=all&page=1&displayCount=50&isPlaceRecommendationReplace=true&lang=ko`;
       const response = await fetch(url, { headers });
-      
-      if (!response.ok) throw new Error('네이버 봇 탐지 시스템이 일시적으로 차단했습니다. 잠시 후 다시 시도해주세요.');
-      
       const text = await response.text();
+      
+      // 방화벽에 막혀서 JSON 데이터가 아니라 에러 웹페이지(HTML '<')가 날아온 경우 방어
+      if (text.trim().startsWith('<')) {
+        throw new Error('현재 네이버 방어벽(WAF)이 일시적으로 강력합니다. 1분 뒤 다시 시도해주세요.');
+      }
+      
       const data = JSON.parse(text);
-      const items = data?.result?.site?.list || [];
+      // V5 API 구조에 맞게 리스트 추출
+      const items = data?.result?.place?.list || data?.result?.site?.list || [];
       
       for (let i = 0; i < items.length; i++) {
         const pName = (items[i].name || '').replace(/\s/g, '').toLowerCase();
@@ -69,6 +73,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, rank: rank });
     
   } catch (error) {
-    return res.status(500).json({ success: false, error: '데이터 수집 에러: ' + error.message });
+    // 뻗지 않고 깔끔한 에러 메시지로 반환
+    return res.status(500).json({ success: false, error: error.message });
   }
 }
