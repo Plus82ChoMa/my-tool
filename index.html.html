@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>마케팅마법사 | 플레이스 & 스토어 리얼 순위 조회</title>
+    
+    <!-- Pretendard 폰트 & Phosphor 아이콘 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Pretendard', 'sans-serif'] },
+                    colors: { primary: '#2563eb' } // placewizard.kr 스타일의 블루
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f8fafc; color: #0f172a; }
+        .tab-btn { border-bottom: 2px solid transparent; transition: all 0.2s; }
+        .tab-active { color: #2563eb; border-bottom: 2px solid #2563eb; font-weight: 700; }
+        .tab-inactive { color: #64748b; font-weight: 500; }
+        .tab-inactive:hover { color: #0f172a; }
+        .spinner { border: 3px solid #e2e8f0; border-top: 3px solid #2563eb; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 sm:p-8">
+
+    <header class="w-full max-w-3xl flex justify-between items-center mb-10 mt-4">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="location.reload()">
+            <div class="bg-blue-600 text-white p-1.5 rounded-lg">
+                <i class="ph-bold ph-magic-wand text-xl"></i>
+            </div>
+            <span class="font-extrabold text-xl tracking-tight">마케팅마법사</span>
+        </div>
+        <a href="YOUR_KAKAOTALK_LINK" target="_blank" class="text-sm font-semibold text-slate-500 hover:text-blue-600 transition flex items-center gap-1">
+            <i class="ph-fill ph-chat-circle"></i> 전문가 문의
+        </a>
+    </header>
+
+    <main class="w-full max-w-2xl flex-1">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">네이버 실시간 순위 조회</h1>
+            <p class="text-slate-500 font-medium">1초 만에 내 가게·스토어의 현재 진짜 순위를 확인하세요.</p>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
+            
+            <div class="flex gap-6 border-b border-slate-100 mb-6">
+                <button id="tabPlace" onclick="setMode('place')" class="tab-btn tab-active pb-3 text-lg flex items-center gap-1.5">
+                    <i class="ph-fill ph-map-pin"></i> 플레이스
+                </button>
+                <button id="tabStore" onclick="setMode('store')" class="tab-btn tab-inactive pb-3 text-lg flex items-center gap-1.5">
+                    <i class="ph-fill ph-storefront"></i> 스마트스토어
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-1.5">검색 키워드</label>
+                    <input type="text" id="keywordInput" placeholder="예: 강남역 맛집 (타겟 키워드)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition font-medium">
+                </div>
+                <div>
+                    <label id="nameLabel" class="block text-sm font-bold text-slate-700 mb-1.5">플레이스 (매장명)</label>
+                    <input type="text" id="nameInput" placeholder="예: 마법사식당 강남점" onkeypress="if(event.key==='Enter') executeSearch()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition font-medium">
+                </div>
+                
+                <button id="searchBtn" onclick="executeSearch()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex justify-center items-center gap-2 mt-4 text-lg">
+                    <span id="btnText">실시간 순위 조회하기</span>
+                </button>
+            </div>
+            
+            <div id="errorBox" class="hidden mt-4 p-3 bg-red-50 text-red-600 text-sm font-bold rounded-lg flex items-center gap-2 border border-red-100">
+                <i class="ph-bold ph-warning-circle text-lg"></i> <span id="errorMsg">에러 메시지</span>
+            </div>
+        </div>
+
+        <div id="resultCard" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="font-bold text-slate-800 text-lg">📊 진단 리포트</h3>
+                <span id="resBadge" class="px-3 py-1 text-xs font-bold rounded-md bg-slate-100 text-slate-600">스마트스토어</span>
+            </div>
+
+            <!-- Rank Display -->
+            <div class="text-center py-6 border-b border-slate-100 mb-6">
+                <div class="text-slate-500 font-medium mb-2"><span id="resKeyword" class="text-slate-800 font-bold">키워드</span> 검색 시 현재 위치</div>
+                <div class="flex items-baseline justify-center gap-1">
+                    <span id="resRank" class="text-5xl font-black tracking-tight text-blue-600">-</span>
+                    <span id="resRankSuffix" class="text-xl font-bold text-slate-400">위</span>
+                </div>
+                <p id="resStatus" class="mt-4 font-bold text-sm bg-slate-100 inline-block px-4 py-1.5 rounded-full">-</p>
+            </div>
+
+            <!-- Marketing Hook Section -->
+            <div class="bg-slate-50 p-5 rounded-xl border border-slate-200 text-center mb-6">
+                <p id="lossTitle" class="text-xs font-bold text-slate-500 mb-1">분석 코멘트</p>
+                <h4 id="lossDesc" class="text-lg font-extrabold text-slate-800">데이터를 분석했습니다.</h4>
+            </div>
+
+            <a href="YOUR_KAKAOTALK_LINK" target="_blank" class="w-full flex justify-center items-center gap-2 bg-[#FEE500] hover:bg-[#FADA0A] text-[#371D1E] font-extrabold py-4 rounded-xl transition text-base">
+                <i class="ph-fill ph-chat-circle text-xl"></i> 상위 노출 1:1 컨설팅 받기
+            </a>
+        </div>
+    </main>
+
+    <footer class="mt-12 text-center text-xs text-slate-400 pb-8 font-medium">
+        © 마케팅마법사. 네이버 실시간 검색 결과를 바탕으로 산출됩니다.
+    </footer>
+
+    <script>
+        let currentMode = 'place';
+
+        function setMode(mode) {
+            currentMode = mode;
+            const tabPlace = document.getElementById('tabPlace');
+            const tabStore = document.getElementById('tabStore');
+            const nameLabel = document.getElementById('nameLabel');
+            const keywordInput = document.getElementById('keywordInput');
+            const nameInput = document.getElementById('nameInput');
+
+            if (mode === 'place') {
+                tabPlace.className = "tab-btn tab-active pb-3 text-lg flex items-center gap-1.5";
+                tabStore.className = "tab-btn tab-inactive pb-3 text-lg flex items-center gap-1.5";
+                nameLabel.innerText = "플레이스 (매장명)";
+                keywordInput.placeholder = "예: 강남역 맛집 (타겟 키워드)";
+                nameInput.placeholder = "예: 마법사식당 강남점";
+            } else {
+                tabStore.className = "tab-btn tab-active pb-3 text-lg flex items-center gap-1.5";
+                tabPlace.className = "tab-btn tab-inactive pb-3 text-lg flex items-center gap-1.5";
+                nameLabel.innerText = "스마트스토어명";
+                keywordInput.placeholder = "예: 무선청소기 (타겟 키워드)";
+                nameInput.placeholder = "예: 플러스82스토어";
+            }
+            
+            document.getElementById('resultCard').classList.add('hidden');
+            document.getElementById('errorBox').classList.add('hidden');
+        }
+
+        async function executeSearch() {
+            const keyword = document.getElementById('keywordInput').value.trim();
+            const name = document.getElementById('nameInput').value.trim();
+            const btn = document.getElementById('searchBtn');
+            const errorBox = document.getElementById('errorBox');
+            const errorMsg = document.getElementById('errorMsg');
+
+            if (!keyword || !name) {
+                errorMsg.innerText = "검색 키워드와 타겟명을 모두 입력해주세요.";
+                errorBox.classList.remove('hidden');
+                return;
+            }
+
+            if (name.includes('http://') || name.includes('https://') || name.includes('naver.com')) {
+                errorMsg.innerText = "링크(URL)가 아닌 매장명 또는 스토어명(예: 플러스82스토어)을 입력해주세요.";
+                errorBox.classList.remove('hidden');
+                return;
+            }
+
+            if (window.location.protocol === 'file:') {
+                errorMsg.innerHTML = "⚠️ <b>[실행 에러]</b> 컴퓨터에서 파일을 직접 열어 서버가 작동하지 않습니다.<br>Vercel에 배포(업로드)한 인터넷 주소로 접속해 주세요.";
+                errorBox.classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('resultCard').classList.add('hidden');
+            errorBox.classList.add('hidden');
+            btn.disabled = true;
+            btn.innerHTML = `<div class="spinner"></div> 순위를 조회하고 있어요...`;
+            btn.classList.replace('bg-blue-600', 'bg-blue-400');
+
+            try {
+                const response = await fetch(`/api/scrape?type=${currentMode}&keyword=${encodeURIComponent(keyword)}&name=${encodeURIComponent(name)}`);
+                
+                if (response.status === 404) {
+                    throw new Error("⚠️ [실행 에러] 서버 기능이 포함된 Vercel에 아직 배포되지 않았습니다.");
+                }
+
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error);
+                }
+
+                showResult(keyword, name, data.rank);
+
+            } catch (err) {
+                errorMsg.innerHTML = err.message;
+                errorBox.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<span id="btnText">실시간 순위 조회하기</span>`;
+                btn.classList.replace('bg-blue-400', 'bg-blue-600');
+            }
+        }
+
+        function showResult(keyword, name, rank) {
+            const resCard = document.getElementById('resultCard');
+            resCard.classList.remove('hidden');
+
+            document.getElementById('resBadge').innerText = currentMode === 'place' ? '네이버 플레이스' : '스마트스토어';
+            document.getElementById('resKeyword').innerText = `'${keyword}'`;
+            
+            const rankEl = document.getElementById('resRank');
+            const suffixEl = document.getElementById('resRankSuffix');
+            const statusEl = document.getElementById('resStatus');
+            const lossDesc = document.getElementById('lossDesc');
+
+            if (rank > 0 && rank <= 3) {
+                rankEl.innerText = rank;
+                rankEl.className = "text-5xl font-black tracking-tight text-blue-600";
+                suffixEl.innerText = "위";
+                statusEl.innerText = "✅ 1페이지 최상위권 노출 중";
+                statusEl.className = "mt-4 font-bold text-sm bg-blue-50 text-blue-700 border border-blue-100 inline-block px-4 py-1.5 rounded-full";
+                lossDesc.innerText = "현재 순위를 완벽하게 유지하기 위한 방어 세팅이 필요합니다.";
+                lossDesc.className = "text-lg font-extrabold text-blue-700";
+            } else if (rank > 3 && rank <= 10) {
+                rankEl.innerText = rank;
+                rankEl.className = "text-5xl font-black tracking-tight text-amber-500";
+                suffixEl.innerText = "위";
+                statusEl.innerText = "⚠️ 1페이지 노출 중이나 클릭 유실 발생";
+                statusEl.className = "mt-4 font-bold text-sm bg-amber-50 text-amber-700 border border-amber-100 inline-block px-4 py-1.5 rounded-full";
+                lossDesc.innerText = "1~3위 대비 클릭 유실이 발생하고 있습니다. 순위 부스팅이 필요합니다.";
+                lossDesc.className = "text-lg font-extrabold text-amber-600";
+            } else if (rank > 10) {
+                rankEl.innerText = rank;
+                rankEl.className = "text-5xl font-black tracking-tight text-red-500";
+                suffixEl.innerText = "위";
+                statusEl.innerText = "🚨 상위권 이탈 (트래픽 급감)";
+                statusEl.className = "mt-4 font-bold text-sm bg-red-50 text-red-700 border border-red-100 inline-block px-4 py-1.5 rounded-full";
+                lossDesc.innerText = "유효 체류시간 및 트래픽이 부족하여 노출이 완전히 밀린 상태입니다.";
+                lossDesc.className = "text-lg font-extrabold text-red-600";
+            } else {
+                rankEl.innerText = "노출";
+                rankEl.className = "text-5xl font-black tracking-tight text-red-500";
+                suffixEl.innerText = "누락";
+                statusEl.innerText = "🚨 50위권 밖 (심각한 노출 정체)";
+                statusEl.className = "mt-4 font-bold text-sm bg-red-50 text-red-700 border border-red-100 inline-block px-4 py-1.5 rounded-full";
+                lossDesc.innerText = "네이버 알고리즘 점수가 현저히 낮아 고객이 전혀 유입되지 않고 있습니다.";
+                lossDesc.className = "text-lg font-extrabold text-red-600";
+            }
+        }
+    </script>
+</body>
+</html>
