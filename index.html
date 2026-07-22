@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>마케팅마법사 | 네이버 공식 API 실시간 진단기</title>
+    <title>마케팅마법사 | 네이버 실시간 진단기</title>
     
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
@@ -25,7 +25,6 @@
         .tab-active { color: #2563eb; border-bottom: 2px solid #2563eb; font-weight: 700; }
         .tab-inactive { color: #64748b; font-weight: 500; }
         .tab-inactive:hover { color: #0f172a; }
-        
         .spinner { 
             border: 3px solid rgba(255,255,255,0.3); 
             border-top: 3px solid #ffffff; 
@@ -39,138 +38,154 @@
         @keyframes fadeInOut { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center p-4 sm:p-8">
+<body class="min-h-screen flex flex-col items-center">
 
-    <header class="w-full max-w-3xl flex justify-between items-center mb-10 mt-4">
-        <div class="flex items-center gap-2 cursor-pointer" onclick="location.reload()">
-            <div class="bg-blue-600 text-white p-1.5 rounded-lg">
-                <i class="ph-bold ph-magic-wand text-xl"></i>
-            </div>
-            <span class="font-extrabold text-xl tracking-tight">마케팅마법사</span>
-        </div>
-        <a href="https://pf.kakao.com" target="_blank" class="text-sm font-semibold text-slate-500 hover:text-blue-600 transition flex items-center gap-1">
-            <i class="ph-fill ph-chat-circle"></i> 전문가 문의
-        </a>
-    </header>
+    <div id="localWarning" class="hidden w-full bg-red-600 text-white text-center py-4 font-bold shadow-md z-50 px-4">
+        🚨 현재 컴퓨터 바탕화면에서 파일을 직접 실행하셨습니다! Vercel 인터넷 링크에서만 작동합니다.
+    </div>
 
-    <main class="w-full max-w-2xl flex-1">
-        <div class="text-center mb-8">
-            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">네이버 공식 API 실시간 순위 조회</h1>
-            <p class="text-slate-500 font-medium">네이버 정식 출입증을 통한 100% 실제 데이터 조회</p>
-        </div>
-
-        <div id="inputCard" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8 relative overflow-hidden">
-            <div class="flex gap-6 border-b border-slate-100 mb-6">
-                <button id="tabPlace" onclick="setMode('place')" class="tab-btn tab-active pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center">
-                    <i class="ph-fill ph-map-pin"></i> 플레이스
-                </button>
-                <button id="tabStore" onclick="setMode('store')" class="tab-btn tab-inactive pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center">
-                    <i class="ph-fill ph-storefront"></i> 스마트스토어
-                </button>
-            </div>
-
-            <div class="space-y-5">
-                <div>
-                    <label class="block text-sm font-bold text-slate-700 mb-1.5">검색 키워드</label>
-                    <input type="text" id="keywordInput" placeholder="예: 강서구 맛집" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition font-medium">
+    <div class="p-4 sm:p-8 w-full max-w-3xl flex flex-col items-center flex-1">
+        <header class="w-full flex justify-between items-center mb-10 mt-4">
+            <div class="flex items-center gap-2 cursor-pointer" onclick="location.reload()">
+                <div class="bg-blue-600 text-white p-1.5 rounded-lg">
+                    <i class="ph-bold ph-magic-wand text-xl"></i>
                 </div>
-                <div>
-                    <label id="nameLabel" class="block text-sm font-bold text-slate-700 mb-1.5">플레이스 (상호명)</label>
-                    <input type="text" id="nameInput" placeholder="예: 이화정갈비명가" onkeypress="if(event.key==='Enter') startApiSearch()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition font-medium">
+                <span class="font-extrabold text-xl tracking-tight">마케팅마법사</span>
+            </div>
+            <a href="https://pf.kakao.com" target="_blank" class="text-sm font-semibold text-slate-500 hover:text-blue-600 transition flex items-center gap-1">
+                <i class="ph-fill ph-chat-circle"></i> 전문가 문의
+            </a>
+        </header>
+
+        <main class="w-full max-w-2xl flex-1">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">네이버 실시간 순위 조회</h1>
+                <p class="text-slate-500 font-medium">1초 만에 내 매장의 현재 진짜 순위를 확인하세요.</p>
+            </div>
+
+            <div id="inputCard" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8 relative overflow-hidden">
+                <div class="flex gap-6 border-b border-slate-100 mb-6">
+                    <button id="tabPlace" onclick="setMode('place')" class="tab-btn tab-active pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center">
+                        <i class="ph-fill ph-map-pin"></i> 플레이스
+                    </button>
+                    <button id="tabStore" onclick="setMode('store')" class="tab-btn tab-inactive pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center">
+                        <i class="ph-fill ph-storefront"></i> 스마트스토어
+                    </button>
+                </div>
+
+                <div class="space-y-5">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1.5">검색 키워드</label>
+                        <input type="text" id="keywordInput" placeholder="예: 강서구 맛집" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 transition font-medium">
+                    </div>
+                    <div>
+                        <label id="nameLabel" class="block text-sm font-bold text-slate-700 mb-1.5">플레이스 (URL 링크)</label>
+                        <input type="text" id="linkInput" placeholder="예: https://m.place.naver.com/..." onkeypress="if(event.key==='Enter') startApiSearch()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 transition font-medium">
+                    </div>
+                    
+                    <button id="searchBtn" onclick="startApiSearch()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex justify-center items-center gap-2 mt-4 text-lg">
+                        <span>실시간 순위 조회하기</span>
+                    </button>
                 </div>
                 
-                <button id="searchBtn" onclick="startApiSearch()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex justify-center items-center gap-2 mt-4 text-lg">
-                    <span>실시간 순위 조회하기</span>
-                </button>
-            </div>
-            
-            <div id="errorBox" class="hidden mt-4 p-3 bg-red-50 text-red-600 text-sm font-bold rounded-lg flex items-center gap-2 border border-red-100">
-                <i class="ph-bold ph-warning-circle text-lg"></i> <span id="errorMsg">에러 메시지</span>
-            </div>
-
-            <div id="loadingOverlay" class="hidden absolute inset-0 bg-white/95 backdrop-blur-sm z-10 flex flex-col justify-center items-center">
-                <div class="spinner mb-4 border-slate-200 border-t-blue-600"></div>
-                <h3 class="text-xl font-bold text-slate-800 mb-2">네이버 공식 서버 조회 중...</h3>
-                <p class="text-sm font-medium text-slate-500 fade-text">정식 API 통신을 통해 순위를 가져오는 중입니다</p>
-            </div>
-        </div>
-
-        <div id="resultCard" class="hidden bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sm:p-8">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="font-extrabold text-slate-800 text-lg flex items-center gap-2">
-                    <i class="ph-fill ph-chart-line text-blue-600 text-xl"></i> 진단 리포트
-                </h3>
-                <span id="resBadge" class="px-3 py-1 text-xs font-bold rounded-md bg-blue-50 text-blue-600">네이버 플레이스</span>
-            </div>
-
-            <div class="text-center py-4 border-b border-slate-100 mb-6">
-                <div class="text-slate-500 font-medium mb-3"><span id="resKeyword" class="text-slate-800 font-bold">'강서구 맛집'</span> 검색 시 현재 위치</div>
-                <div class="flex items-baseline justify-center gap-1">
-                    <span id="resRank" class="text-6xl font-black tracking-tighter text-slate-800">1</span>
-                    <span id="resRankUnit" class="text-2xl font-bold text-slate-400">위</span>
+                <div id="errorBox" class="hidden mt-4 p-4 bg-red-50 text-red-600 text-sm font-bold rounded-xl flex items-start gap-2 border border-red-100 leading-relaxed">
+                    <i class="ph-bold ph-warning-circle text-lg mt-0.5"></i> <span id="errorMsg">에러 메시지</span>
                 </div>
-                <p id="resStatusBadge" class="mt-4 font-bold text-sm bg-blue-50 text-blue-600 border border-blue-100 inline-block px-4 py-1.5 rounded-full">
-                    🎉 상위 노출 안정권
-                </p>
-            </div>
 
-            <div class="bg-slate-50 p-6 rounded-xl border border-slate-200 text-center mb-8">
-                <p class="text-sm font-bold text-slate-500 mb-2">분석 코멘트</p>
-                <p id="resComment" class="text-slate-800 font-bold text-base">네이버 공식 API 서버에서 안전하게 실시간 확인된 데이터입니다.</p>
-            </div>
-
-            <a href="https://pf.kakao.com" target="_blank" class="w-full flex flex-col justify-center items-center gap-1 bg-[#FEE500] hover:bg-[#FADA0A] text-[#371D1E] font-extrabold py-4 rounded-xl transition shadow-md">
-                <div class="flex items-center gap-2 text-lg">
-                    <i class="ph-fill ph-chat-circle text-2xl"></i> 순위 유지 및 마케팅 컨설팅 받기
+                <div id="loadingOverlay" class="hidden absolute inset-0 bg-white/95 backdrop-blur-sm z-10 flex flex-col justify-center items-center">
+                    <div class="spinner mb-4 border-slate-200 border-t-blue-600"></div>
+                    <h3 class="text-xl font-bold text-slate-800 mb-2">네이버 데이터 스캔 중...</h3>
+                    <p class="text-sm font-medium text-slate-500 fade-text">입력하신 링크를 분석하고 있습니다</p>
                 </div>
-                <span class="text-xs font-semibold opacity-70">클릭하여 카카오톡으로 바로 이동</span>
-            </a>
-        </div>
-    </main>
+            </div>
 
-    <footer class="mt-12 text-center text-xs text-slate-400 pb-8 font-medium">
-        © 마케팅마법사. 네이버 공식 오픈 API 기반 실시간 조회 시스템.
-    </footer>
+            <div id="resultCard" class="hidden bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sm:p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="font-extrabold text-slate-800 text-lg flex items-center gap-2">
+                        <i class="ph-fill ph-chart-line text-blue-600 text-xl"></i> 진단 리포트
+                    </h3>
+                    <span id="resBadge" class="px-3 py-1 text-xs font-bold rounded-md bg-blue-50 text-blue-600 border border-blue-100">API 연동 완료</span>
+                </div>
+
+                <div class="text-center py-6 border-b border-slate-100 mb-6 bg-slate-50 rounded-xl">
+                    <div class="text-slate-500 font-medium mb-3"><span id="resKeyword" class="text-slate-800 font-bold">'강서구 맛집'</span> 검색 시 현재 위치</div>
+                    <div class="flex items-baseline justify-center gap-1">
+                        <span id="resRank" class="text-6xl font-black tracking-tighter text-blue-600">1</span>
+                        <span id="resRankUnit" class="text-2xl font-bold text-slate-400">위</span>
+                    </div>
+                    <p id="resStatusBadge" class="mt-4 font-bold text-sm bg-blue-100 text-blue-700 inline-block px-4 py-1.5 rounded-full shadow-sm">
+                        상위 노출 확인
+                    </p>
+                </div>
+
+                <a href="https://pf.kakao.com" target="_blank" class="w-full flex flex-col justify-center items-center gap-1 bg-[#FEE500] hover:bg-[#FADA0A] text-[#371D1E] font-extrabold py-4 rounded-xl transition shadow-md">
+                    <div class="flex items-center gap-2 text-lg">
+                        <i class="ph-fill ph-chat-circle text-2xl"></i> 순위 마케팅 컨설팅 받기
+                    </div>
+                    <span class="text-xs font-semibold opacity-70">클릭하여 카카오톡으로 바로 이동</span>
+                </a>
+            </div>
+        </main>
+    </div>
 
     <script>
+        if (location.protocol === 'file:') {
+            document.getElementById('localWarning').classList.remove('hidden');
+            const searchBtn = document.getElementById('searchBtn');
+            searchBtn.disabled = true;
+            searchBtn.innerText = "🚨 Vercel 주소로 접속해야 작동합니다";
+            searchBtn.className = "w-full bg-slate-400 text-white font-bold py-4 rounded-xl shadow-md flex justify-center items-center gap-2 mt-4 text-lg cursor-not-allowed";
+        }
+
         let currentMode = 'place';
 
         function setMode(mode) {
             currentMode = mode;
             document.getElementById('tabPlace').className = mode === 'place' ? "tab-btn tab-active pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center" : "tab-btn tab-inactive pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center";
             document.getElementById('tabStore').className = mode === 'store' ? "tab-btn tab-active pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center" : "tab-btn tab-inactive pb-3 text-lg flex items-center gap-1.5 w-1/2 justify-center";
-            document.getElementById('nameLabel').innerText = mode === 'place' ? "플레이스 (상호명)" : "스마트스토어명";
+            
+            document.getElementById('nameLabel').innerText = mode === 'place' ? "플레이스 (URL 링크)" : "스마트스토어 (URL 링크)";
             document.getElementById('keywordInput').placeholder = mode === 'place' ? "예: 강서구 맛집" : "예: 무선청소기";
-            document.getElementById('nameInput').placeholder = mode === 'place' ? "예: 이화정갈비명가" : "예: 플러스82스토어";
+            document.getElementById('linkInput').placeholder = mode === 'place' ? "예: https://m.place.naver.com/..." : "예: https://smartstore.naver.com/...";
             
             document.getElementById('resultCard').classList.add('hidden');
+            document.getElementById('errorBox').classList.add('hidden');
         }
 
         async function startApiSearch() {
+            if (location.protocol === 'file:') return; 
+
             const keyword = document.getElementById('keywordInput').value.trim();
-            const name = document.getElementById('nameInput').value.trim();
+            const link = document.getElementById('linkInput').value.trim();
             const errorBox = document.getElementById('errorBox');
             
-            if (!keyword || !name) {
-                document.getElementById('errorMsg').innerText = "검색 키워드와 상호명을 모두 입력해주세요.";
+            if (!keyword || !link) {
+                document.getElementById('errorMsg').innerHTML = "검색 키워드와 URL 링크를 모두 입력해주세요.";
                 errorBox.classList.remove('hidden');
                 return;
             }
-            if (name.includes('http://') || name.includes('https://')) {
-                document.getElementById('errorMsg').innerText = "링크(URL)가 아닌 매장명(상호명)을 입력해주세요.";
+            if (!link.startsWith('http')) {
+                document.getElementById('errorMsg').innerHTML = "상호명이 아닌 <b>정확한 URL 링크(http:// 또는 https:// 로 시작)</b>를 복사해서 붙여넣어주세요.";
                 errorBox.classList.remove('hidden');
                 return;
             }
+            
             errorBox.classList.add('hidden');
+            document.getElementById('resultCard').classList.add('hidden');
             
             const overlay = document.getElementById('loadingOverlay');
             overlay.classList.remove('hidden');
-            document.getElementById('resultCard').classList.add('hidden');
 
             try {
-                const response = await fetch(`/api/scrape?type=${currentMode}&keyword=${encodeURIComponent(keyword)}&name=${encodeURIComponent(name)}`);
-                const data = await response.json();
+                // 백엔드 서버(api/scrape.js)로 검색어와 "링크"를 보냅니다.
+                const response = await fetch(`/api/scrape?type=${currentMode}&keyword=${encodeURIComponent(keyword)}&link=${encodeURIComponent(link)}`);
+                
+                const contentType = response.headers.get("content-type");
+                if (!contentType || !contentType.includes("application/json")) {
+                    throw new Error("서버에서 올바른 응답을 받지 못했습니다. (API 통신 에러)");
+                }
 
+                const data = await response.json();
                 overlay.classList.add('hidden');
 
                 if (!data.success) {
@@ -181,38 +196,41 @@
 
             } catch (err) {
                 overlay.classList.add('hidden');
-                document.getElementById('errorMsg').innerText = err.message;
+                document.getElementById('errorMsg').innerHTML = err.message + "<br/><br/><span class='text-xs font-normal opacity-80'>* 지속적인 오류 시 관리자에게 문의바랍니다.</span>";
                 errorBox.classList.remove('hidden');
             }
         }
 
         function showResult(keyword, rank) {
-            document.getElementById('resBadge').innerText = currentMode === 'place' ? '네이버 플레이스 (공식 API)' : '스마트스토어 (공식 API)';
             document.getElementById('resKeyword').innerText = `'${keyword}'`;
             
             const rankSpan = document.getElementById('resRank');
+            const rankUnit = document.getElementById('resRankUnit');
             const statusBadge = document.getElementById('resStatusBadge');
-            const comment = document.getElementById('resComment');
 
             if (rank > 50) {
                 rankSpan.innerText = '50위 밖';
-                document.getElementById('resRankUnit').innerText = '';
-                statusBadge.className = "mt-4 font-bold text-sm bg-red-50 text-red-600 border border-red-100 inline-block px-4 py-1.5 rounded-full";
-                statusBadge.innerHTML = "🚨 상위 50위 이내 미노출";
-                comment.innerText = "현재 네이버 공식 검색 결과 50위 권 내에 해당 매장/스토어가 노출되지 않고 있습니다.";
+                rankSpan.className = "text-5xl font-black tracking-tighter text-red-500";
+                rankUnit.innerText = '';
+                statusBadge.className = "mt-4 font-bold text-sm bg-red-50 text-red-600 border border-red-100 inline-block px-4 py-1.5 rounded-full shadow-sm";
+                statusBadge.innerHTML = "🚨 심각한 노출 누락 상태";
             } else {
                 rankSpan.innerText = rank;
-                document.getElementById('resRankUnit').innerText = '위';
-                statusBadge.className = "mt-4 font-bold text-sm bg-blue-50 text-blue-600 border border-blue-100 inline-block px-4 py-1.5 rounded-full";
-                statusBadge.innerHTML = "🎉 실시간 확인 완료";
-                comment.innerText = `네이버 공식 API 서버를 통해 실시간으로 확인된 정확한 순위입니다.`;
+                rankSpan.className = "text-6xl font-black tracking-tighter text-blue-600";
+                rankUnit.innerText = '위';
+                
+                if (rank <= 5) {
+                    statusBadge.className = "mt-4 font-bold text-sm bg-blue-100 text-blue-700 border border-blue-200 inline-block px-4 py-1.5 rounded-full shadow-sm";
+                    statusBadge.innerHTML = "🎉 최상위 노출 유지 중";
+                } else {
+                    statusBadge.className = "mt-4 font-bold text-sm bg-yellow-50 text-yellow-700 border border-yellow-200 inline-block px-4 py-1.5 rounded-full shadow-sm";
+                    statusBadge.innerHTML = "⚠️ 상위권 진입 마케팅 필요";
+                }
             }
 
             document.getElementById('resultCard').classList.remove('hidden');
             document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     </script>
-</body>
-</html>
 </body>
 </html>
