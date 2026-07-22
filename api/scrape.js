@@ -5,125 +5,128 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: '검색어와 URL 링크를 모두 입력해주세요.' });
   }
 
-  // 대표님께서 발급해주신 네이버 공식 오픈 API 출입증 (정상 작동 확인)
-  const CLIENT_ID = 'z7oub05gYP7vKjDToj2q';
-  const CLIENT_SECRET = 'w_ZaZ6NtGS';
-  
   try {
     let extractedName = '';
-    let targetStoreId = '';
+    let targetId = '';
+    let rank = -1;
     
+    // 네이버 봇 차단 방지를 위한 브라우저 위장(User-Agent) 세팅
+    const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+
     if (type === 'store') {
-        // [완벽 개선] 스마트스토어는 네이버에 무단 접속(스크래핑)할 필요가 전혀 없습니다!
-        // 고객이 입력한 링크(예: https://smartstore.naver.com/my-shop)에서 'my-shop' 부분만 쏙 빼냅니다.
+        // 스마트스토어 ID 완벽 추출 (예: https://smartstore.naver.com/myshop)
         const match = link.match(/smartstore\.naver\.com\/([^/?]+)/i);
         if (match) {
-            targetStoreId = match[1].toLowerCase().trim();
+            targetId = match[1].toLowerCase().trim();
         } else {
-            // 단축 URL이나 다른 형태일 경우를 대비한 최후의 수단
-            targetStoreId = link.replace(/https?:\/\//, '').split('/')[0].toLowerCase().trim();
+            // 다른 도메인 형태의 쇼핑몰일 경우를 대비한 최후의 보루
+            targetId = link.replace(/https?:\/\//, '').split('/')[0].toLowerCase().trim();
         }
-        extractedName = targetStoreId; // 화면 표시용
+        extractedName = targetId; // 탐색 전 기본 표시용
         
     } else {
-        // [완벽 개선] 플레이스의 경우 싸구려 우회 서버 대신 안정적인 엔터프라이즈급 API(Microlink) 사용
-        try {
-            const mlUrl = `https://api.microlink.io/?url=${encodeURIComponent(link)}`;
-            const mlRes = await fetch(mlUrl);
-            const mlData = await mlRes.json();
-            
-            if (mlData.status === 'success' && mlData.data && mlData.data.title) {
-                extractedName = mlData.data.title;
-            } else {
-                throw new Error('Microlink failed');
-            }
-        } catch (error) {
-            // Microlink가 혹시라도 실패하면, 구글 검색로봇(Googlebot)으로 위장하여 다이렉트 접속 시도 (이중 안전장치)
-            const fallbackRes = await fetch(link, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)' }
-            });
-            const html = await fallbackRes.text();
-            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-            if (titleMatch) {
-                extractedName = titleMatch[1];
-            }
+        // 플레이스: naver.me 등 단축 URL을 넣었을 때 원문 링크를 추적해서 알아냄 (강력한 기능)
+        let finalLink = link;
+        if (finalLink.includes('naver.me')) {
+             try {
+                const redirectRes = await fetch(finalLink, { method: 'GET', redirect: 'follow' });
+                finalLink = redirectRes.url;
+             } catch(e) {
+                // 무시하고 진행
+             }
         }
-
-        if (!extractedName) {
-            throw new Error('해당 플레이스 링크에서 상호명을 읽을 수 없습니다. 정확한 링크인지 확인해주세요.');
+        
+        // 플레이스 고유 ID 번호 완벽 추출 (가장 확실한 식별 방법)
+        // 예: m.place.naver.com/restaurant/123456789/home -> '123456789' 추출
+        const placeIdMatch = finalLink.match(/(?:place|restaurant|hairshop|accommodation|hospital)[^/]*\/([0-9]{6,20})/i) || finalLink.match(/\/([0-9]{6,20})(?:\?|\/|$)/);
+        
+        if (placeIdMatch) {
+            targetId = placeIdMatch[1];
+        } else {
+            throw new Error('플레이스 링크에서 고유 ID를 찾을 수 없습니다. 정확한 플레이스 링크를 입력해주세요.');
         }
-
-        // 네이버가 제목에 붙여놓은 꼬리표 다 떼고 순수 상호명만 남기기
-        extractedName = extractedName.replace(/: 네이버쇼핑 스마트스토어/g, '').replace(/- 네이버 지도/g, '').replace(/네이버 지도/g, '').trim();
+        extractedName = "플레이스 " + targetId; // 순위 탐색 성공 시 실제 상호명으로 덮어씌움
     }
-    
-    // 비교를 위해 공백 제거 및 소문자 변환
-    const cleanTargetName = extractedName.replace(/\s/g, '').toLowerCase();
-    
-    let rank = -1;
-    let items = [];
 
     if (type === 'store') {
-      // 1. 스토어 검색 (쇼핑 API - 한 번에 100개까지 긁어오기)
-      const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(keyword)}&display=100`;
-      const response = await fetch(url, {
-        headers: { 'X-Naver-Client-Id': CLIENT_ID, 'X-Naver-Client-Secret': CLIENT_SECRET }
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.errorMessage || '네이버 쇼핑 API 호출 실패');
-      items = data.items || [];
-      
-      // 스토어 순위 매칭 로직 (스크래핑 없이 아이디로만 비교)
-      for (let i = 0; i < items.length; i++) {
-        const itemLink = (items[i].link || '').toLowerCase();
-        const mallName = (items[i].mallName || '').toLowerCase();
+        let currentRank = 1;
+        let found = false;
         
-        if (itemLink.includes(targetStoreId) || mallName.includes(targetStoreId)) {
-          rank = i + 1;
-          break;
+        // [완벽 개선] 네이버 오픈API 버림 -> 실제 스마트폰 네이버 쇼핑 검색결과 API 사용 (최대 200위 딥스캔)
+        for (let page = 1; page <= 5; page++) {
+            const url = `https://msearch.shopping.naver.com/api/search/all?query=${encodeURIComponent(keyword)}&pagingIndex=${page}&pagingSize=40&productSet=total&viewType=list&sort=rel&isKewyordTotalSearch=true`;
+            const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+            
+            if (!res.ok) throw new Error('네이버 쇼핑 실제 랭킹 데이터를 가져오는데 실패했습니다.');
+            const data = await res.json();
+            
+            // 응답 데이터 안전하게 파싱 (구조 변경 대비)
+            const products = data?.shoppingResult?.products || data?.items || [];
+            if (products.length === 0) break;
+            
+            for (const item of products) {
+                const mallUrl = (item.mallProductUrl || item.mallUrl || '').toLowerCase();
+                const mallId = (item.mallId || '').toLowerCase();
+                const channelId = (item.channelId || '').toLowerCase();
+                
+                // 상호명(한글) 비교로 인한 억울한 미스매칭 해결! '고유 ID'가 일치하면 무조건 정답!
+                if (mallUrl.includes(targetId) || mallId === targetId || channelId === targetId) {
+                    rank = currentRank;
+                    extractedName = item.mallName || targetId; // 정확한 스토어명 확보
+                    found = true;
+                    break;
+                }
+                currentRank++;
+            }
+            if (found) break; // 찾으면 즉시 루프 탈출
         }
-      }
-      
+        
     } else {
-      // 2. 플레이스 검색 (지역 API - 5개씩 10번 반복해서 50위까지 긁어오기)
-      for (let start = 1; start <= 50; start += 5) {
-        const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(keyword)}&display=5&start=${start}`;
-        const response = await fetch(url, {
-          headers: { 'X-Naver-Client-Id': CLIENT_ID, 'X-Naver-Client-Secret': CLIENT_SECRET }
-        });
-        const data = await response.json();
+        // 플레이스 파트
+        let currentRank = 1;
+        let found = false;
         
-        if (!response.ok) {
-           if (start === 1) throw new Error(data.errorMessage || '네이버 지역 API 호출 실패');
-           break;
+        // [완벽 개선] 가짜 순위가 나오는 지역 오픈API 버림 -> 실제 '네이버 지도앱' 통합검색 API 직결 (최대 150위 탐색)
+        for (let page = 1; page <= 3; page++) {
+            const url = `https://map.naver.com/p/api/search/allSearch?query=${encodeURIComponent(keyword)}&type=all&page=${page}&displayCount=50`;
+            const res = await fetch(url, {
+                headers: { 
+                    'User-Agent': USER_AGENT,
+                    'Accept': 'application/json, text/plain, */*',
+                    'Referer': 'https://map.naver.com/'
+                }
+            });
+            
+            if (!res.ok) throw new Error('네이버 지도 실제 랭킹 데이터를 가져오는데 실패했습니다.');
+            const data = await res.json();
+            
+            const places = data?.result?.place?.list || [];
+            if (places.length === 0) break;
+            
+            for (const place of places) {
+                // 상호명이 '스타벅스' '스타벅스 강남점' 이렇게 달라서 실패하던 현상을 원천 차단. 
+                // 주민등록번호와 같은 Place ID로 정확히 매칭합니다.
+                if (String(place.id) === String(targetId)) {
+                    rank = currentRank;
+                    extractedName = place.name; // 실제 플레이스 상호명 확보 완벽
+                    found = true;
+                    break;
+                }
+                currentRank++;
+            }
+            if (found) break; // 찾으면 즉시 루프 탈출
         }
-        
-        const fetchedItems = data.items || [];
-        items = items.concat(fetchedItems);
-        if (fetchedItems.length === 0) break;
-      }
-      
-      // 플레이스 순위 매칭 로직 (이름에 일부 단어만 겹쳐도 정답 처리)
-      for (let i = 0; i < items.length; i++) {
-        // 네이버가 주는 데이터에 있는 <b> 태그 같은 HTML 제거 및 공백 제거
-        const itemTitle = (items[i].title || '').replace(/<[^>]*>?/gm, '').replace(/\s/g, '').toLowerCase();
-        
-        if (itemTitle.includes(cleanTargetName) || cleanTargetName.includes(itemTitle)) {
-          rank = i + 1;
-          break;
-        }
-      }
     }
 
-    // 못 찾았으면 50위 밖(51)으로 처리
+    // 끝끝내 찾지 못했을 경우 (100~150위 완전 밖)
     if (rank === -1) {
-      rank = 51;
+        rank = 101; // 화면에서 순위권 밖으로 예외처리하기 쉽도록 101로 고정
     }
 
     return res.status(200).json({ success: true, rank: rank, extractedName: extractedName });
 
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: '랭킹 실시간 조회 중 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' });
   }
 }
