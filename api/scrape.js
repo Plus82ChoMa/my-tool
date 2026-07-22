@@ -24,75 +24,50 @@ export default async function handler(req, res) {
         'X-Real-IP': fakeIP
     };
 
-    // 🚀 핵심: 3중 우회 접속 엔진 (하나가 막히면 다음 통로로 자동 우회)
-    const fetchPage = async (page) => {
-        let url = '';
-        if (type === 'store') {
-            url = `https://msearch.shopping.naver.com/api/search/all?query=${encodeURIComponent(keyword)}&pagingIndex=${page}&pagingSize=40&productSet=total&viewType=list&sort=rel&isKewyordTotalSearch=true`;
-        } else {
-            // 지도 API 중 가장 보안이 허술한 구형 모바일 통로 집중 타격
-            url = `https://m.map.naver.com/search2/searchMore.naver?query=${encodeURIComponent(keyword)}&sm=sug&page=${page}&displayCount=50`;
-        }
-
-        // 전략 1: 다이렉트 돌파 (2.5초 내 응답 없으면 포기)
-        try {
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), 2500);
-            const r = await fetch(url, { headers, signal: controller.signal });
-            clearTimeout(id);
-            if (r.ok) return await r.json();
-        } catch(e) { /* 무시하고 전략 2로 이동 */ }
-
-        // 전략 2: 고속 우회 프록시 (Corsproxy)
-        try {
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), 3000);
-            const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(url), {
-                headers: { 'User-Agent': headers['User-Agent'] },
-                signal: controller.signal
-            });
-            clearTimeout(id);
-            if (r.ok) return await r.json();
-        } catch(e) { /* 무시하고 전략 3으로 이동 */ }
-
-        // 전략 3: 안정형 우회 프록시 (Allorigins) - 최후의 보루
-        try {
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), 3500);
-            const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: controller.signal });
-            clearTimeout(id);
-            if (r.ok) {
-                const data = await r.json();
-                return JSON.parse(data.contents);
-            }
-        } catch(e) {}
-
-        return null; // 3중 방어막이 다 뚫리면 널 반환
-    };
-
     try {
-        // 🚀 타임아웃 박살: 1,2,3,4 페이지를 "동시에" 스캔합니다 (Promise.all 병렬 처리)
-        // 스토어는 4페이지(160위), 플레이스는 3페이지(150위)까지 탐색
-        const pages = type === 'store' ? [1, 2, 3, 4] : [1, 2, 3];
-        const results = await Promise.all(pages.map(p => fetchPage(p)));
-
+        const maxPages = type === 'store' ? 4 : 3;
         let scannedList = [];
         let rank = 101;
         let extractedName = targetName;
         let found = false;
 
-        // 병렬로 긁어온 데이터를 순서대로 조립
-        for (let i = 0; i < results.length; i++) {
-            const data = results[i];
-            if (!data) continue;
-
+        // 🚀 핵심 수정: 동시에 4페이지를 검색하면 네이버가 '디도스(DDoS) 공격'으로 간주하여 즉시 차단합니다.
+        // 사람처럼 1페이지 확인 후 0.5초 쉬고 2페이지로 넘어가는 "순차적(Sequential) 스캔"으로 변경합니다.
+        for (let page = 1; page <= maxPages; page++) {
+            let data = null;
             let items = [];
-            if (type === 'store') {
-                items = data?.shoppingResult?.products || data?.items || [];
-            } else {
-                items = data?.result?.site?.list || data?.result?.place?.list || [];
+
+            try {
+                if (type === 'store') {
+                    const url = `https://msearch.shopping.naver.com/api/search/all?query=${encodeURIComponent(keyword)}&pagingIndex=${page}&pagingSize=40&productSet=total&viewType=list&sort=rel&isKewyordTotalSearch=true`;
+                    const r = await fetch(url, { headers });
+                    if (r.ok) {
+                        data = await r.json();
+                        items = data?.shoppingResult?.products || data?.items || [];
+                    }
+                } else {
+                    // 지도 최신 API 우선 타격
+                    const url = `https://map.naver.com/p/api/search/allSearch?query=${encodeURIComponent(keyword)}&type=all&searchCoord=&page=${page}&displayCount=50`;
+                    const r = await fetch(url, { headers });
+                    
+                    if (r.ok) {
+                        data = await r.json();
+                        items = data?.result?.place?.list || [];
+                    } else {
+                        // 차단 방어막 발동 시, 보안이 허술한 구형 모바일 API로 자동 우회
+                        const url2 = `https://m.map.naver.com/search2/searchMore.naver?query=${encodeURIComponent(keyword)}&sm=sug&page=${page}&displayCount=50`;
+                        const r2 = await fetch(url2, { headers });
+                        if (r2.ok) {
+                            data = await r2.json();
+                            items = data?.result?.site?.list || data?.result?.place?.list || [];
+                        }
+                    }
+                }
+            } catch(e) {
+                // 단일 페이지 에러 무시하고 다음 페이지 속행
             }
 
+            // 긁어온 데이터 조립 및 매칭
             for (const item of items) {
                 const rawName = type === 'store' ? (item.mallName || item.channelName || '') : (item.name || '');
                 if (!rawName) continue;
@@ -100,7 +75,7 @@ export default async function handler(req, res) {
                 scannedList.push(rawName);
                 const normName = normalize(rawName);
 
-                // 상호명 매칭 (둘 중 하나가 상대방을 포함하면 정답 인정)
+                // 상호명 매칭
                 if (normName.includes(targetNormalized) || targetNormalized.includes(normName)) {
                     rank = scannedList.length;
                     extractedName = rawName; // 네이버에 실제 등록된 정식 명칭
@@ -108,7 +83,11 @@ export default async function handler(req, res) {
                     break;
                 }
             }
-            if (found) break; // 찾으면 이후 페이지 분석 즉시 중단
+
+            if (found) break; // 찾으면 즉시 중단
+            
+            // 🤖 네이버 방화벽 봇 감지 회피용 강제 휴식 (0.5초 대기) - 이 부분이 차단을 막는 1등 공신입니다!
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
 
         // 3중 우회마저 모두 실패하여 단 1개의 데이터도 못 가져온 극한의 상황
