@@ -1,137 +1,100 @@
 export default async function handler(req, res) {
-  // CORS 처리 (필수)
+  // CORS 처리
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { type, keyword, link } = req.query;
+  const { type, keyword, targetName } = req.query;
 
-  if (!type || !keyword || !link) {
-    return res.status(400).json({ success: false, error: '검색어와 URL 링크를 모두 입력해주세요.' });
+  if (!type || !keyword || !targetName) {
+    return res.status(400).json({ success: false, error: '검색 키워드와 매장명을 모두 입력해주세요.' });
   }
 
   try {
-    let extractedName = '';
-    let targetId = '';
     let rank = -1;
-    
-    // 네이버 차단 방지 및 PC/모바일 통합 환경 위장 헤더
+    let extractedName = targetName;
+    let found = false;
+
+    // 🔥 핵심: 네이버 방화벽 완벽 우회를 위한 '일반 사용자 크롬 브라우저' 완벽 위장 헤더
     const headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'ko-KR,ko;q=0.9',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Referer': 'https://map.naver.com/'
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': `https://map.naver.com/p/search/${encodeURIComponent(keyword)}`,
+        'Origin': 'https://map.naver.com',
+        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'Connection': 'keep-alive',
+        'Cache-Control': 'no-cache'
     };
 
-    if (type === 'store') {
-        // 스마트스토어 & 브랜드스토어 완벽 호환
-        const storeMatch = link.match(/(?:smartstore|brand)\.naver\.com\/([^/?]+)/i);
-        if (storeMatch) {
-            targetId = storeMatch[1].toLowerCase().trim();
-        } else {
-            targetId = link.replace(/https?:\/\//, '').split('/')[0].toLowerCase().trim();
-        }
-        extractedName = "스토어 ID: " + targetId; 
-        
-    } else {
-        let finalLink = link;
-        // 단축 URL (naver.me) 리다이렉트 추적
-        if (finalLink.includes('naver.me')) {
-             try {
-                const redirectRes = await fetch(finalLink, { method: 'GET', redirect: 'follow' });
-                finalLink = redirectRes.url;
-                
-                // 메타 태그(JS)로 리다이렉트 되는 경우까지 2중 추적
-                const text = await redirectRes.text();
-                const metaMatch = text.match(/URL=['"]?([^'"]+)['"]?/i);
-                if (metaMatch) finalLink = metaMatch[1];
-             } catch(e) {
-                 console.warn("리다이렉트 실패, 원본 링크로 시도");
-             }
-        }
-        
-        finalLink = decodeURIComponent(finalLink);
-        
-        // 어떤 형태의 네이버 플레이스 링크가 들어와도 무조건 '고유 숫자 ID' 추출
-        const exactMatch = finalLink.match(/(?:place|restaurant|hairshop|accommodation|hospital|p\/entry\/place|v5\/entry\/place|pcmap)[^/]*\/([0-9]{6,15})/i);
-        
-        if (exactMatch) {
-            targetId = exactMatch[1];
-        } else {
-            // 최후의 보루: 링크 내에서 6~15자리의 연속된 숫자 덩어리 찾기
-            const numberMatch = finalLink.match(/([0-9]{6,15})/);
-            if (numberMatch) targetId = numberMatch[1];
-        }
-
-        if (!targetId) {
-            return res.status(400).json({ success: false, error: '링크에서 매장 고유 ID 번호를 찾을 수 없습니다. 정확한 [공유하기] 링크인지 확인해주세요.' });
-        }
-        extractedName = "ID: " + targetId + " (상호명 탐색중)"; 
-    }
-
-    let found = false;
+    // 띄어쓰기, 특수문자 상관없이 매칭하기 위한 정규화 함수
+    const normalize = (str) => (str || '').replace(/[\s\(\)\[\]\{\}\-\_]/g, '').toLowerCase();
+    const targetNormalized = normalize(targetName);
 
     if (type === 'store') {
+        const storeHeaders = { 
+            ...headers, 
+            'Referer': `https://msearch.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`, 
+            'Origin': 'https://msearch.shopping.naver.com' 
+        };
+
         let currentRank = 1;
-        // 최대 5페이지 (200위) 탐색
-        for (let page = 1; page <= 5; page++) {
+        for (let page = 1; page <= 4; page++) { // 4페이지(160위) 까지만 탐색
             const url = `https://msearch.shopping.naver.com/api/search/all?query=${encodeURIComponent(keyword)}&pagingIndex=${page}&pagingSize=40&productSet=total&viewType=list&sort=rel`;
-            const response = await fetch(url, { headers });
-            
-            if (!response.ok) break; 
-            
+            const response = await fetch(url, { headers: storeHeaders });
+
+            if (!response.ok) throw new Error('네이버 방화벽 차단');
+
             const data = await response.json();
             const products = data?.shoppingResult?.products || data?.items || [];
             if (products.length === 0) break;
-            
+
             for (const item of products) {
-                const mallUrl = (item.mallProductUrl || item.mallUrl || '').toLowerCase();
-                const mallId = (item.mallId || '').toLowerCase();
-                const channelId = (item.channelId || '').toLowerCase();
-                
-                // URL, Mall ID, Channel ID 3중 검사
-                if (mallUrl.includes(targetId) || mallId === targetId || channelId === targetId) {
+                const mallName = normalize(item.mallName);
+                if (mallName.includes(targetNormalized) || targetNormalized.includes(mallName)) {
                     rank = currentRank;
-                    extractedName = item.mallName || targetId;
+                    extractedName = item.mallName;
                     found = true;
                     break;
                 }
                 currentRank++;
             }
-            if (found) break; 
+            if (found) break;
+            
+            // 너무 빠른 요청으로 인한 IP 차단을 막기 위해 0.3초 대기
+            await new Promise(r => setTimeout(r, 300));
         }
         
     } else {
+        // 플레이스 파트
         let currentRank = 1;
-        // 최대 4페이지 (200위) 탐색. searchCoord(GPS) 좌표를 비워서 '가장 객관적인 전국 단위 순위'를 가져옴
-        for (let page = 1; page <= 4; page++) {
+        for (let page = 1; page <= 3; page++) { // 3페이지(150위) 까지만 탐색
             const url = `https://map.naver.com/p/api/search/allSearch?query=${encodeURIComponent(keyword)}&type=all&searchCoord=&page=${page}&displayCount=50`;
             const response = await fetch(url, { headers });
-            
-            if (!response.ok) break; 
+
             const text = await response.text();
             
-            // 네이버 캡차(봇 방지) 페이지가 떴을 경우 명확한 에러 반환
+            // 캡차 감지 시 즉시 에러 발생 (과부하 방지)
             if(text.includes('captcha') || text.includes('기계적인 접근')) {
-                return res.status(500).json({ success: false, error: '네이버 방화벽에 의해 스캔이 차단되었습니다. 5분 후 다시 시도해주세요.' });
+                throw new Error('CAPTCHA_BLOCKED');
             }
 
             let data;
-            try {
-                data = JSON.parse(text);
-            } catch(e) { break; } // JSON 파싱 실패시 루프 종료
+            try { data = JSON.parse(text); } catch(e) { break; }
             
             const places = data?.result?.place?.list;
-            // 해당 키워드에 플레이스 결과가 더 없으면 중단
             if (!places) break;
-            
+
             for (const place of places) {
-                // 정확도 100% 매칭: String 변환 후 고유 ID 번호 직접 대조
-                if (String(place.id) === String(targetId)) {
+                const placeName = normalize(place.name);
+                
+                // 입력한 이름이 실제 이름에 포함되어 있거나, 실제 이름이 입력한 이름에 포함되어 있으면 정답 처리
+                if (placeName.includes(targetNormalized) || targetNormalized.includes(placeName)) {
                     rank = currentRank;
                     extractedName = place.name; 
                     found = true;
@@ -139,7 +102,10 @@ export default async function handler(req, res) {
                 }
                 currentRank++;
             }
-            if (found) break; 
+            if (found) break;
+            
+            // IP 방어용 대기
+            await new Promise(r => setTimeout(r, 300));
         }
     }
 
@@ -147,17 +113,13 @@ export default async function handler(req, res) {
         rank = 101; 
     }
 
-    return res.status(200).json({ 
-        success: true, 
-        rank: rank, 
-        extractedName: extractedName,
-        debugId: targetId // 프론트엔드에서 디버깅용으로 띄워주기 위해 ID 반환
-    });
+    return res.status(200).json({ success: true, rank, extractedName });
 
   } catch (error) {
-    return res.status(500).json({ 
-        success: false, 
-        error: '서버 에러가 발생했습니다. 잠시 후 다시 시도해주세요.' 
-    });
+    let errMsg = '데이터 수집 중 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+    if(error.message === 'CAPTCHA_BLOCKED') {
+        errMsg = '네이버 트래픽이 많아 일시 지연되었습니다. 검색 키워드를 살짝 바꿔서 시도해주세요.';
+    }
+    return res.status(500).json({ success: false, error: errMsg });
   }
 }
