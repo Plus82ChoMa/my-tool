@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // 클라이언트(프론트)에서 보낸 검색어와 "링크"를 가져옵니다.
   const { type, keyword, link } = req.query;
 
   if (!type || !keyword || !link) {
@@ -11,17 +10,20 @@ export default async function handler(req, res) {
   const CLIENT_SECRET = 'w_ZaZ6NtGS';
   
   try {
-    // 1. [핵심 기술!] 입력된 링크(URL)에 접속하여 숨겨진 '진짜 상호명'을 0.1초 만에 추출합니다.
-    const linkRes = await fetch(link, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-    });
-    
-    if (!linkRes.ok) throw new Error('입력하신 링크에 접속할 수 없습니다. URL을 다시 확인해주세요.');
-    
-    const html = await linkRes.text();
     let extractedName = '';
     
-    // 페이지 소스에서 제목(title) 부분만 족집게처럼 찾아냅니다.
+    // [핵심 기술 업데이트] 네이버의 Vercel 차단을 뚫기 위해 '해외 무료 우회 프록시(AllOrigins)'를 거쳐 접속합니다.
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(link)}`;
+    const linkRes = await fetch(proxyUrl);
+    
+    if (!linkRes.ok) throw new Error('입력하신 링크에 접속할 수 없습니다. 우회 서버가 혼잡합니다.');
+    
+    const proxyData = await linkRes.json();
+    const html = proxyData.contents;
+    
+    if (!html) throw new Error('해당 링크에서 웹페이지 정보를 불러오지 못했습니다.');
+
+    // 페이지 소스(HTML)에서 제목(og:title) 부분만 족집게처럼 찾아냅니다.
     const ogMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
     if (ogMatch) {
         extractedName = ogMatch[1];
@@ -76,24 +78,25 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. 알아낸 상호명(cleanTarget)과 API 결과 리스트를 대조하여 등수 찾기
+    // 알아낸 상호명(cleanTarget)과 API 결과 리스트를 대조하여 등수 찾기
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const title = (item.title || item.mallName || '').replace(/<[^>]*>?/gm, '').replace(/\s/g, '').toLowerCase();
+      const itemLink = (item.link || '').toLowerCase();
 
-      // 서로 이름이 일부라도 겹치면 정답으로 처리
-      if (title.includes(cleanTarget) || cleanTarget.includes(title)) {
+      // 서로 이름이 일부라도 겹치거나, 스마트스토어 링크 주소가 겹치면 정답으로 처리
+      if (title.includes(cleanTarget) || cleanTarget.includes(title) || (type === 'store' && itemLink.includes(cleanTarget))) {
         rank = i + 1;
         break;
       }
     }
 
-    // 못 찾았으면 51위로 밖으로 처리
+    // 못 찾았으면 51위 밖으로 처리
     if (rank === -1) {
       rank = 51;
     }
 
-    return res.status(200).json({ success: true, rank: rank });
+    return res.status(200).json({ success: true, rank: rank, extractedName: extractedName });
 
   } catch (error) {
     console.error(error);
