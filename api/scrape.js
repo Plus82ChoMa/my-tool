@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // CORS 처리
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -10,55 +9,50 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: '검색 키워드와 매장명을 모두 입력해주세요.' });
   }
 
+  // 띄어쓰기, 괄호 등을 무시하고 텍스트만 뭉쳐서 비교하기 위한 함수
+  const normalize = (str) => (str || '').replace(/[\s\(\)\[\]\{\}\-\_]/g, '').toLowerCase();
+  const targetNormalized = normalize(targetName);
+
   try {
-    let rank = -1;
+    let rank = 101; // 기본값 (순위 밖)
     let extractedName = targetName;
     let found = false;
 
-    // 🔥 핵심: 네이버 방화벽 완벽 우회를 위한 '일반 사용자 크롬 브라우저' 완벽 위장 헤더
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': `https://map.naver.com/p/search/${encodeURIComponent(keyword)}`,
-        'Origin': 'https://map.naver.com',
-        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'Connection': 'keep-alive',
-        'Cache-Control': 'no-cache'
-    };
-
-    // 띄어쓰기, 특수문자 상관없이 매칭하기 위한 정규화 함수
-    const normalize = (str) => (str || '').replace(/[\s\(\)\[\]\{\}\-\_]/g, '').toLowerCase();
-    const targetNormalized = normalize(targetName);
-
     if (type === 'store') {
-        const storeHeaders = { 
-            ...headers, 
-            'Referer': `https://msearch.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}`, 
-            'Origin': 'https://msearch.shopping.naver.com' 
-        };
-
+        // 🚀 [스토어 완벽 해결] 차단된 API 대신, 네이버 쇼핑 웹페이지 자체를 긁어오는 SSR 파싱 방식 도입
         let currentRank = 1;
-        for (let page = 1; page <= 4; page++) { // 4페이지(160위) 까지만 탐색
-            const url = `https://msearch.shopping.naver.com/api/search/all?query=${encodeURIComponent(keyword)}&pagingIndex=${page}&pagingSize=40&productSet=total&viewType=list&sort=rel`;
-            const response = await fetch(url, { headers: storeHeaders });
+        for (let page = 1; page <= 4; page++) {
+            const url = `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(keyword)}&pagingIndex=${page}&pagingSize=40&productSet=total&viewType=list&sort=rel`;
+            
+            // 스토어 전용 크롤링 헤더 (HTML 페이지 요청)
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml'
+                }
+            });
 
-            if (!response.ok) throw new Error('네이버 방화벽 차단');
+            if (!response.ok) throw new Error('STORE_BLOCKED');
+            const html = await response.text();
 
-            const data = await response.json();
-            const products = data?.shoppingResult?.products || data?.items || [];
+            // 네이버 쇼핑 HTML 내부에 숨겨진 원본 JSON 데이터 추출 (가장 확실한 방법)
+            const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+            if (!match) break;
+
+            let data;
+            try { data = JSON.parse(match[1]); } catch(e) { break; }
+
+            // 쇼핑 리스트 배열 안전하게 접근
+            const products = data?.props?.pageProps?.initialState?.products?.list || [];
             if (products.length === 0) break;
 
             for (const item of products) {
-                const mallName = normalize(item.mallName);
+                // 스마트스토어 상호명 추출 (변수명이 다양할 수 있어 이중 체크)
+                const mallName = normalize(item.mallName || (item.mallInfoCache && item.mallInfoCache.name) || '');
+                
                 if (mallName.includes(targetNormalized) || targetNormalized.includes(mallName)) {
                     rank = currentRank;
-                    extractedName = item.mallName;
+                    extractedName = item.mallName || item.mallInfoCache?.name || targetName;
                     found = true;
                     break;
                 }
@@ -66,21 +60,29 @@ export default async function handler(req, res) {
             }
             if (found) break;
             
-            // 너무 빠른 요청으로 인한 IP 차단을 막기 위해 0.3초 대기
-            await new Promise(r => setTimeout(r, 300));
+            // IP 차단 방지용 안전 대기시간
+            await new Promise(r => setTimeout(r, 400));
         }
-        
+
     } else {
-        // 플레이스 파트
+        // 🚀 [플레이스 완벽 해결] 방화벽을 자극하던 과도한 위장 헤더를 제거하고 '초경량 스탠다드 헤더' 적용
         let currentRank = 1;
-        for (let page = 1; page <= 3; page++) { // 3페이지(150위) 까지만 탐색
-            const url = `https://map.naver.com/p/api/search/allSearch?query=${encodeURIComponent(keyword)}&type=all&searchCoord=&page=${page}&displayCount=50`;
-            const response = await fetch(url, { headers });
+        
+        // 봇 의심을 피하기 위한 최소한의 깔끔한 헤더
+        const cleanHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': `https://map.naver.com/p/search/${encodeURIComponent(keyword)}`
+        };
+
+        for (let page = 1; page <= 3; page++) {
+            const url = `https://map.naver.com/p/api/search/allSearch?query=${encodeURIComponent(keyword)}&type=all&page=${page}&displayCount=50`;
+            const response = await fetch(url, { headers: cleanHeaders });
 
             const text = await response.text();
             
-            // 캡차 감지 시 즉시 에러 발생 (과부하 방지)
-            if(text.includes('captcha') || text.includes('기계적인 접근')) {
+            // 캡차(방화벽) 감지 로직 유지
+            if(text.includes('captcha') || text.includes('기계적인 접근') || text.includes('Forbidden')) {
                 throw new Error('CAPTCHA_BLOCKED');
             }
 
@@ -88,12 +90,10 @@ export default async function handler(req, res) {
             try { data = JSON.parse(text); } catch(e) { break; }
             
             const places = data?.result?.place?.list;
-            if (!places) break;
+            if (!places || places.length === 0) break;
 
             for (const place of places) {
                 const placeName = normalize(place.name);
-                
-                // 입력한 이름이 실제 이름에 포함되어 있거나, 실제 이름이 입력한 이름에 포함되어 있으면 정답 처리
                 if (placeName.includes(targetNormalized) || targetNormalized.includes(placeName)) {
                     rank = currentRank;
                     extractedName = place.name; 
@@ -104,22 +104,22 @@ export default async function handler(req, res) {
             }
             if (found) break;
             
-            // IP 방어용 대기
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 400));
         }
-    }
-
-    if (rank === -1) {
-        rank = 101; 
     }
 
     return res.status(200).json({ success: true, rank, extractedName });
 
   } catch (error) {
+    console.error("Scraping error:", error.message);
+    
     let errMsg = '데이터 수집 중 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
     if(error.message === 'CAPTCHA_BLOCKED') {
-        errMsg = '네이버 트래픽이 많아 일시 지연되었습니다. 검색 키워드를 살짝 바꿔서 시도해주세요.';
+        errMsg = '서버 통신이 네이버에 의해 잠시 차단되었습니다. 약 1분 후 다시 시도해주세요.';
+    } else if (error.message === 'STORE_BLOCKED') {
+        errMsg = '스마트스토어 서버 접근이 지연되고 있습니다.';
     }
+    
     return res.status(500).json({ success: false, error: errMsg });
   }
 }
