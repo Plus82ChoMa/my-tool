@@ -25,14 +25,6 @@
         .tab-active { color: #2563eb; border-bottom: 2px solid #2563eb; font-weight: 700; }
         .tab-inactive { color: #64748b; font-weight: 500; }
         .tab-inactive:hover { color: #0f172a; }
-        .spinner { 
-            border: 3px solid rgba(255,255,255,0.3); 
-            border-top: 3px solid #ffffff; 
-            border-radius: 50%; 
-            width: 24px; 
-            height: 24px; 
-            animation: spin 1s linear infinite; 
-        }
         .spinner-blue {
             border: 3px solid rgba(37, 99, 235, 0.2); 
             border-top: 3px solid #2563eb; 
@@ -112,14 +104,16 @@
                     <h3 class="font-extrabold text-slate-800 text-lg flex items-center gap-2">
                         <i class="ph-fill ph-chart-line text-blue-600 text-xl"></i> 진단 리포트
                     </h3>
-                    <span id="resBadge" class="px-3 py-1 text-xs font-bold rounded-md bg-blue-50 text-blue-600 border border-blue-100">API 분석 완료</span>
+                    <span class="px-3 py-1 text-xs font-bold rounded-md bg-blue-50 text-blue-600 border border-blue-100">API 분석 완료</span>
                 </div>
 
-                <div class="text-center py-6 border-b border-slate-100 mb-6 bg-slate-50 rounded-xl">
+                <div class="text-center py-6 border-b border-slate-100 mb-6 bg-slate-50 rounded-xl px-2">
                     <div class="text-slate-500 font-medium mb-3">
                         <span id="resKeyword" class="text-slate-800 font-bold">'키워드'</span> 검색 시 현재 위치
                     </div>
-                    <div class="text-xs text-slate-400 mb-4 font-semibold" id="resTargetName">인식된 상호명</div>
+                    <!-- 중요: 추출된 ID를 고객이 확인 가능하도록 노출 -->
+                    <div class="text-sm text-slate-500 mb-4 font-semibold px-2" id="resTargetName">인식된 상호명</div>
+                    
                     <div class="flex items-baseline justify-center gap-1">
                         <span id="resRank" class="text-6xl font-black tracking-tighter text-blue-600">1</span>
                         <span id="resRankUnit" class="text-2xl font-bold text-slate-400">위</span>
@@ -127,6 +121,15 @@
                     <p id="resStatusBadge" class="mt-4 font-bold text-sm bg-blue-100 text-blue-700 inline-block px-4 py-1.5 rounded-full shadow-sm">
                         상위 노출 확인
                     </p>
+                </div>
+                
+                <!-- 100위 밖일 때 나타나는 원인 설명 박스 -->
+                <div id="discrepancyHint" class="hidden mb-6 bg-slate-50 p-4 rounded-xl text-left border border-slate-200 shadow-sm">
+                    <h4 class="font-bold text-slate-800 text-[15px] mb-2 flex items-center gap-1.5"><i class="ph-fill ph-info text-blue-600 text-lg"></i> 실제 순위와 다르게 나오시나요?</h4>
+                    <ul class="text-[13px] text-slate-600 space-y-2 list-disc pl-5 leading-relaxed">
+                        <li><b>스마트폰 GPS 가산점:</b> 휴대폰 검색은 내 위치와 가까운 매장을 최상단에 올립니다. 본 진단기는 거품이 빠진 <b>'객관적인 전국 공통 순위'</b>를 도출하여 차이가 발생합니다.</li>
+                        <li><b>ID 인식 확인:</b> 위쪽에 파란색 글씨로 표시된 <b>[고유 ID 번호]</b>가 실제 사장님 매장 번호가 맞는지 확인해주세요.</li>
+                    </ul>
                 </div>
 
                 <a href="https://pf.kakao.com" target="_blank" class="w-full flex flex-col justify-center items-center gap-1 bg-[#FEE500] hover:bg-[#FADA0A] text-[#371D1E] font-extrabold py-4 rounded-xl transition shadow-md">
@@ -140,7 +143,6 @@
     </div>
 
     <script>
-        // 로컬 환경 실행 감지
         if (location.protocol === 'file:') {
             document.getElementById('localWarning').classList.remove('hidden');
             const searchBtn = document.getElementById('searchBtn');
@@ -186,32 +188,29 @@
             
             errorBox.classList.add('hidden');
             document.getElementById('resultCard').classList.add('hidden');
+            document.getElementById('discrepancyHint').classList.add('hidden');
             
             const overlay = document.getElementById('loadingOverlay');
             overlay.classList.remove('hidden');
 
             try {
-                // 백엔드 서버(api/scrape.js)로 검색어와 "링크"를 보냅니다.
+                // 백엔드 서버(api/scrape.js) 호출
                 const response = await fetch(`/api/scrape?type=${currentMode}&keyword=${encodeURIComponent(keyword)}&link=${encodeURIComponent(link)}`);
                 
-                // HTTP 상태 코드가 200이 아닌 경우 에러 처리
-                if (!response.ok) {
-                    let errorMessage = '서버 통신 중 오류가 발생했습니다.';
-                    try {
-                        const errData = await response.json();
-                        errorMessage = errData.error || errorMessage;
-                    } catch(e) {}
-                    throw new Error(errorMessage);
+                let data;
+                try {
+                    data = await response.json();
+                } catch(e) {
+                    throw new Error('서버 응답을 처리할 수 없습니다. Vercel 배포가 정상적인지 확인하세요.');
                 }
 
-                const data = await response.json();
-                
-                if (!data.success) {
+                if (!response.ok || !data.success) {
                     throw new Error(data.error || '데이터 수집 중 오류가 발생했습니다.');
                 }
 
                 overlay.classList.add('hidden');
-                showResult(keyword, data.rank, data.extractedName);
+                // debugId 파라미터 추가
+                showResult(keyword, data.rank, data.extractedName, data.debugId);
 
             } catch (err) {
                 overlay.classList.add('hidden');
@@ -224,13 +223,16 @@
             document.getElementById('errorBox').classList.remove('hidden');
         }
 
-        function showResult(keyword, rank, targetName) {
+        function showResult(keyword, rank, targetName, debugId) {
             document.getElementById('resKeyword').innerText = `'${keyword}'`;
-            document.getElementById('resTargetName').innerText = `인식된 매장명: ${targetName || '알 수 없음'}`;
+            
+            // 인식된 상호명과 추출한 ID를 시각적으로 보여주어 디버깅/확인 가능하게 함
+            document.getElementById('resTargetName').innerHTML = `인식 매장: <span class="font-bold text-slate-800">${targetName || '알 수 없음'}</span> <br/><span class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded mt-1 inline-block border border-slate-300">추출 고유ID: ${debugId || '없음'}</span>`;
             
             const rankSpan = document.getElementById('resRank');
             const rankUnit = document.getElementById('resRankUnit');
             const statusBadge = document.getElementById('resStatusBadge');
+            const hintBox = document.getElementById('discrepancyHint');
 
             if (rank > 100) {
                 rankSpan.innerText = '순위 밖';
@@ -238,10 +240,14 @@
                 rankUnit.innerText = '';
                 statusBadge.className = "mt-4 font-bold text-sm bg-red-50 text-red-600 border border-red-100 inline-block px-4 py-1.5 rounded-full shadow-sm";
                 statusBadge.innerHTML = "🚨 100위 밖이거나 노출 누락 상태";
+                
+                // 100위 밖일 때만 안내 문구 노출
+                hintBox.classList.remove('hidden');
             } else {
                 rankSpan.innerText = rank;
                 rankSpan.className = "text-6xl font-black tracking-tighter text-blue-600";
                 rankUnit.innerText = '위';
+                hintBox.classList.add('hidden');
                 
                 if (rank <= 5) {
                     statusBadge.className = "mt-4 font-bold text-sm bg-blue-100 text-blue-700 border border-blue-200 inline-block px-4 py-1.5 rounded-full shadow-sm";
